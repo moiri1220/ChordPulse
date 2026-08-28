@@ -10,7 +10,9 @@ class FakePipeline:
         self.audio_paths: list = []
         self.rhythm_levels: list[int] = []
 
-    def analyze_to_musicxml(self, audio_path, output_path, *, rhythm_level):
+    def analyze_to_musicxml(
+        self, audio_path, output_path, *, rhythm_level, anticipation_smoothing=True
+    ):
         self.audio_paths.append(audio_path)
         self.rhythm_levels.append(rhythm_level)
         assert audio_path.is_file()

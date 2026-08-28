@@ -164,8 +164,11 @@ class AnalysisPipeline:
         output_path: Path,
         *,
         rhythm_level: RhythmLevel = None,
+        anticipation_smoothing: bool = True,
     ) -> AnalysisResult:
         result = self.analyze(audio_path)
-        self.musicxml_generator.generate(result, output_path, rhythm_level=rhythm_level)
+        self.musicxml_generator.generate(
+            result, output_path, rhythm_level=rhythm_level, anticipation_smoothing=anticipation_smoothing
+        )
         return result
 

@@ -45,6 +45,7 @@ class MusicXmlGenerator:
         output_path: Path,
         *,
         rhythm_level: RhythmLevel = None,
+        anticipation_smoothing: bool = True,
         title: str = "ChordPulse Master Chord Chart",
     ) -> Path:
         try:
@@ -82,6 +83,7 @@ class MusicXmlGenerator:
                 note,
                 harmony,
                 duration,
+                anticipation_smoothing=anticipation_smoothing,
             )
             part.append(measure)
 
@@ -168,6 +170,8 @@ def _render_adaptive_measure(
     note,
     harmony,
     duration,
+    *,
+    anticipation_smoothing: bool = True,
 ) -> None:
     """小節内のコードチェンジタイミングと長さに応じて、最適な音価（全音符、2分音符、4分音符、8分音符等）
     のスラッシュ音符およびコードシンボルをレンダリングします。
@@ -184,7 +188,7 @@ def _render_adaptive_measure(
     # アンティシペーション（食って入るコード）の平滑化
     # 小節の最後の0.5拍だけコードが変わっており、かつそれが次の小節の頭のコードと同じ場合、
     # その小節内ではコードチェンジせず、直前のコードを維持する（次の小節の頭にクオンタイズする）。
-    if len(slot_labels) >= 2:
+    if anticipation_smoothing and len(slot_labels) >= 2:
         last_label = slot_labels[-1]
         prev_label = slot_labels[-2]
         if last_label != prev_label:

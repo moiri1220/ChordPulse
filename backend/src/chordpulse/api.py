@@ -188,6 +188,7 @@ def _analysis_worker(
     output_path: str,
     rhythm_level: int | None,
     chord_engine: str,
+    anticipation_smoothing: bool,
     result_queue,
 ) -> None:
     """タイムアウト時に強制終了できるプロセス内で指定されたコードエンジンのパイプラインを実行します。"""
@@ -197,6 +198,7 @@ def _analysis_worker(
             Path(audio_path),
             Path(output_path),
             rhythm_level=rhythm_level,
+            anticipation_smoothing=anticipation_smoothing,
         )
         result_queue.put(("success", _result_metadata(result)))
     except Exception:
@@ -211,13 +213,14 @@ def _run_isolated_analysis(
     *,
     rhythm_level: int | None,
     chord_engine: str,
+    anticipation_smoothing: bool = True,
     timeout_seconds: float,
 ) -> dict[str, str]:
     context = multiprocessing.get_context("spawn")
     result_queue = context.Queue()
     process = context.Process(
         target=_analysis_worker,
-        args=(str(audio_path), str(output_path), rhythm_level, chord_engine, result_queue),
+        args=(str(audio_path), str(output_path), rhythm_level, chord_engine, anticipation_smoothing, result_queue),
     )
     process.start()
     try:
@@ -337,6 +340,7 @@ def create_app(
         rhythm_level: Annotated[int, Form()] = 2,
         chord_engine: Annotated[str, Form()] = "btc",
         lawful_use_confirmation: Annotated[bool, Form()] = False,
+        anticipation_smoothing: Annotated[bool, Form()] = True,
     ) -> Response:
         normalized_youtube_url = _validate_request(
             upload=file,
@@ -369,6 +373,7 @@ def create_app(
                             output_path,
                             rhythm_level=rhythm_level,
                             chord_engine=chord_engine.strip().lower(),
+                            anticipation_smoothing=anticipation_smoothing,
                             timeout_seconds=analysis_timeout_seconds,
                         )
                     else:
@@ -376,6 +381,7 @@ def create_app(
                             audio_path,
                             output_path,
                             rhythm_level=rhythm_level,
+                            anticipation_smoothing=anticipation_smoothing,
                         )
                         metadata = _result_metadata(result)
                     musicxml = output_path.read_bytes()

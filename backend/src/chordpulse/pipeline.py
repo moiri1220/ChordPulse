@@ -19,11 +19,11 @@ class AnalysisPipeline:
         *,
         beat_analyzer: LibrosaBeatAnalyzer | None = None,
         chord_recognizer: ChordRecognizer | None = None,
-        chord_engine: str = "template",
+        chord_engine: str = "btc",
         musicxml_generator: MusicXmlGenerator | None = None,
     ) -> None:
         self.beat_analyzer = beat_analyzer or LibrosaBeatAnalyzer()
-        if chord_recognizer is not None and chord_engine != "template":
+        if chord_recognizer is not None and chord_engine != "btc":
             raise ValueError("chord_engineをchord_recognizerと組み合わせることはできません")
         self.chord_recognizer = chord_recognizer or create_chord_recognizer(chord_engine)
         self.musicxml_generator = musicxml_generator or MusicXmlGenerator()

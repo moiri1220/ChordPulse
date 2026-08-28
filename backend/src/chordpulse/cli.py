@@ -43,6 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="このプロセスでYouTubeの取得を明示的に有効にします",
     )
     parser.add_argument(
+        "--chord-engine",
+        choices=("btc", "viterbi", "harmonic", "template"),
+        default="btc",
+        help="コード認識エンジン (btc=AI深層学習最高精度, viterbi=HMM平滑化, harmonic=低音重視HPSS, template=標準クロマ)",
+    )
+    parser.add_argument(
         "--analysis-json",
         type=Path,
         help="解析メタデータの出力先オプションパス（オーディオデータは含みません）",
@@ -67,7 +73,7 @@ def run(args: argparse.Namespace) -> int:
             print("エラー: 出力先が入力オーディオファイルを上書きしてはなりません", file=sys.stderr)
             return 2
 
-    pipeline = AnalysisPipeline()
+    pipeline = AnalysisPipeline(chord_engine=args.chord_engine)
     try:
         if args.input is not None:
             source_context = acquire_local_audio(args.input)

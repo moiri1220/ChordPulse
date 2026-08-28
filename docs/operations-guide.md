@@ -132,6 +132,11 @@ npm run dev
 - **「FFmpeg is required...」 というエラーが発生する**
   - 原因: YouTube機能のテスト時、実行環境に FFmpeg が見つかりませんでした。
   - 対策: FFmpeg がシステムにインストールされ、環境変数 `PATH` に登録されているか確認してください。
+- **コード解析モード（エンジン）について**
+  - **`btc` (デフォルト / 推奨)**: BTC (Bi-directional Transformer) による深層学習コード認識。144次元CQTとSelf-Attentionにより、商業楽曲（J-POP等）から極めて高精度なコード進行を推定します。初回実行時に約12MBの重みファイルが `~/.cache/chordpulse/` に自動ダウンロード・キャッシュされます。
+  - **`viterbi`**: HMM + Viterbiアルゴリズムによる大域的平滑化。
+  - **`harmonic`**: HPSS + chroma_cqt による低音域重視のテンプレートマッチング。
+  - **`template`**: 全帯域 chroma_stft によるシンプルなテンプレートマッチング（フェーズ1ベースライン）。
 - **「譜面を表示できませんでした...」 と表示されるがダウンロードはできる**
   - 原因: OpenSheetMusicDisplay (OSMD) が壊れたMusicXMLを読み込んだか、パース時に例外が発生しました。
   - 対策: ダウンロードした `.musicxml` をMuseScore等の外部ソフトで開き、フォーマットに破損がないか確認してください。
@@ -142,3 +147,4 @@ npm run dev
     .venv\Scripts\activate
     python -m pytest tests/ -v
     ```
+

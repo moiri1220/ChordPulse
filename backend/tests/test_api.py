@@ -1,5 +1,5 @@
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from chordpulse.api import AnalysisBusyError, AnalysisGate, create_app
 from chordpulse.models import AnalysisResult, ChordEvent
@@ -102,6 +102,32 @@ def test_analyze_rejects_invalid_rhythm_level() -> None:
 
     assert response.status_code == 400
     assert "rhythm_level" in response.json()["detail"]
+
+
+def test_analyze_rejects_invalid_chord_engine() -> None:
+    client = TestClient(create_app(pipeline=FakePipeline()))
+
+    response = client.post(
+        "/analyze",
+        files={"file": ("source.wav", b"RIFF-test", "audio/wav")},
+        data={"chord_engine": "invalid_engine", "lawful_use_confirmation": "true"},
+    )
+
+    assert response.status_code == 400
+    assert "chord_engine" in response.json()["detail"]
+
+
+def test_analyze_accepts_valid_chord_engines() -> None:
+    pipeline = FakePipeline()
+    client = TestClient(create_app(pipeline=pipeline))
+
+    for engine in ("btc", "viterbi", "harmonic", "template"):
+        response = client.post(
+            "/analyze",
+            files={"file": ("source.wav", b"RIFF-test", "audio/wav")},
+            data={"chord_engine": engine, "lawful_use_confirmation": "true"},
+        )
+        assert response.status_code == 200
 
 
 def test_analyze_rejects_invalid_file_extension() -> None:

@@ -12,6 +12,7 @@ dependencies = [
     "music21>=9.3,<10.0",
     "numpy>=1.24,<3.0",
     "soundfile>=0.12,<1.0",
+    "torch>=2.0.0",
 ]
 
 [project.optional-dependencies]

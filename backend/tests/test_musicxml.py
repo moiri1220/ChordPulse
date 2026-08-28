@@ -127,7 +127,6 @@ def test_musicxml_generator_handles_flat_root_chords(tmp_path) -> None:
     回帰テスト: music21 は 'Bb' を無効とし ValueError を投げるが、
     '_to_music21_label' による変換後は 'B-' として受け付けられる。
     """
-    output = tmp_path / "flat_chords.musicxml"
     result = AnalysisResult(
         bpm=120.0,
         duration_seconds=8.0,

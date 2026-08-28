@@ -118,6 +118,7 @@ export default function HomePage() {
   const [file, setFile] = useState<File | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [rhythmLevel, setRhythmLevel] = useState("2");
+  const [chordEngine, setChordEngine] = useState("btc");
   const [lawfulUseConfirmation, setLawfulUseConfirmation] = useState(false);
   const [status, setStatus] = useState<AnalysisStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +130,7 @@ export default function HomePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileInputId = useId();
   const rhythmSelectId = useId();
+  const chordEngineSelectId = useId();
   const consentCheckboxId = useId();
 
   const apiBaseUrl = useMemo(
@@ -240,6 +242,7 @@ export default function HomePage() {
 
     const formData = new FormData();
     formData.set("rhythm_level", rhythmLevel);
+    formData.set("chord_engine", chordEngine);
     formData.set("lawful_use_confirmation", "true");
     if (sourceMode === "file" && file) {
       formData.set("file", file);
@@ -437,6 +440,23 @@ export default function HomePage() {
                 <option value="1">レベル1：シンプル（全音符・二分音符ベース）</option>
                 <option value="2">レベル2：基本スラッシュ（4分音符スラッシュ ////）</option>
                 <option value="3">レベル3：リズムスラッシュ（Onsetベースの8分音符打ち分け）</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="field-label" htmlFor={chordEngineSelectId}>
+                コード解析モード（エンジン）
+              </label>
+              <select
+                className="select-input"
+                id={chordEngineSelectId}
+                onChange={(event) => setChordEngine(event.target.value)}
+                value={chordEngine}
+              >
+                <option value="btc">BTC（AI深層学習・最高精度・推奨）</option>
+                <option value="viterbi">Viterbi（HMM平滑化）</option>
+                <option value="harmonic">Harmonic（低音重視・HPSS）</option>
+                <option value="template">Template（標準クロマ）</option>
               </select>
             </div>
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import multiprocessing
 import os
 import queue
@@ -26,6 +27,8 @@ from .audio import (
     youtube_enabled_from_environment,
 )
 from .pipeline import AnalysisPipeline
+
+_logger = logging.getLogger(__name__)
 
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 MUSICXML_MEDIA_TYPE = "application/vnd.recordare.musicxml+xml"
@@ -177,22 +180,27 @@ def _result_metadata(result) -> dict[str, str]:
     }
 
 
+ALLOWED_CHORD_ENGINES = {"btc", "viterbi", "harmonic", "template"}
+
+
 def _analysis_worker(
     audio_path: str,
     output_path: str,
     rhythm_level: int,
+    chord_engine: str,
     result_queue,
 ) -> None:
-    """タイムアウト時に強制終了できるプロセス内でデフォルトのパイプラインを実行します。"""
+    """タイムアウト時に強制終了できるプロセス内で指定されたコードエンジンのパイプラインを実行します。"""
 
     try:
-        result = AnalysisPipeline().analyze_to_musicxml(
+        result = AnalysisPipeline(chord_engine=chord_engine).analyze_to_musicxml(
             Path(audio_path),
             Path(output_path),
             rhythm_level=rhythm_level,
         )
         result_queue.put(("success", _result_metadata(result)))
     except Exception:
+        _logger.exception("解析ワーカープロセス内で例外が発生しました (chord_engine=%s)", chord_engine)
         # パス、ソースメタデータ、または生の例外メッセージは親プロセスに送信しません。
         result_queue.put(("failure", None))
 
@@ -202,13 +210,14 @@ def _run_isolated_analysis(
     output_path: Path,
     *,
     rhythm_level: int,
+    chord_engine: str,
     timeout_seconds: float,
 ) -> dict[str, str]:
     context = multiprocessing.get_context("spawn")
     result_queue = context.Queue()
     process = context.Process(
         target=_analysis_worker,
-        args=(str(audio_path), str(output_path), rhythm_level, result_queue),
+        args=(str(audio_path), str(output_path), rhythm_level, chord_engine, result_queue),
     )
     process.start()
     try:
@@ -236,6 +245,7 @@ def _validate_request(
     upload: UploadFile | None,
     youtube_url: str | None,
     rhythm_level: int,
+    chord_engine: str,
     lawful_use_confirmation: bool,
 ) -> str | None:
     # MVP仕様§7: 入力不足・形式不正→400、利用条件違反→403、解析不能→422
@@ -247,6 +257,12 @@ def _validate_request(
         )
     if rhythm_level not in {1, 2, 3}:
         raise HTTPException(status_code=400, detail="rhythm_level は 1, 2, 3 のいずれかでなければなりません")
+    if chord_engine.strip().lower() not in ALLOWED_CHORD_ENGINES:
+        allowed = ", ".join(sorted(ALLOWED_CHORD_ENGINES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"chord_engine は {allowed} のいずれかでなければなりません",
+        )
     if not lawful_use_confirmation:
         raise HTTPException(
             status_code=403,
@@ -318,12 +334,14 @@ def create_app(
         file: Annotated[UploadFile | None, File()] = None,
         youtube_url: Annotated[str | None, Form()] = None,
         rhythm_level: Annotated[int, Form()] = 2,
+        chord_engine: Annotated[str, Form()] = "btc",
         lawful_use_confirmation: Annotated[bool, Form()] = False,
     ) -> Response:
         normalized_youtube_url = _validate_request(
             upload=file,
             youtube_url=youtube_url,
             rhythm_level=rhythm_level,
+            chord_engine=chord_engine,
             lawful_use_confirmation=lawful_use_confirmation,
         )
 
@@ -349,6 +367,7 @@ def create_app(
                             audio_path,
                             output_path,
                             rhythm_level=rhythm_level,
+                            chord_engine=chord_engine.strip().lower(),
                             timeout_seconds=analysis_timeout_seconds,
                         )
                     else:
@@ -370,8 +389,10 @@ def create_app(
         except AnalysisTimeoutError as exc:
             raise HTTPException(status_code=504, detail=str(exc)) from exc
         except AnalysisWorkerError as exc:
+            _logger.exception("解析ワーカーが正常に終了しませんでした")
             raise HTTPException(status_code=500, detail="解析に失敗しました") from exc
         except (RuntimeError, ValueError, OSError) as exc:
+            _logger.exception("解析リクエストの処理中に予期しない例外が発生しました")
             raise HTTPException(status_code=500, detail="解析に失敗しました") from exc
 
         return Response(

@@ -51,6 +51,9 @@ def test_cli_success_removes_request_audio_and_writes_metadata(tmp_path, monkeyp
     observed = {}
 
     class FakePipeline:
+        def __init__(self, chord_engine: str = "viterbi", **kwargs) -> None:
+            observed["chord_engine"] = chord_engine
+
         def analyze_to_musicxml(self, audio_path, output_path, *, rhythm_level):
             observed["audio_path"] = audio_path
             assert audio_path.is_file()

@@ -65,3 +65,68 @@ def test_complete_leading_beats_tolerance_prevents_duplicate_near_first_beat() -
     completed = complete_leading_beats((0.9, 1.9, 2.9), seconds_per_beat=1.0)
     assert completed[0] == 0.0
     assert completed[1] == 0.9  # no duplicate 1.0 between 0.0 and 0.9
+
+
+def test_create_beat_analyzer_factory() -> None:
+    from chordpulse.beats import BeatThisAnalyzer, LibrosaBeatAnalyzer, create_beat_analyzer
+
+    default_analyzer = create_beat_analyzer()
+    assert isinstance(default_analyzer, BeatThisAnalyzer)
+
+    librosa_analyzer = create_beat_analyzer("librosa")
+    assert isinstance(librosa_analyzer, LibrosaBeatAnalyzer)
+
+    with pytest.raises(ValueError, match="未知のビート解析エンジン"):
+        create_beat_analyzer("unknown_engine")
+
+
+def test_beat_this_analyzer_estimates_160_bpm_accurately() -> None:
+    import numpy as np
+    from chordpulse.beats import BeatThisAnalyzer
+    from chordpulse.models import AudioData
+
+    # 160 BPM の合成オーディオを生成 (0.375秒間隔のビート)
+    sr = 22050
+    duration = 10.0
+    bpm_target = 160.0
+    beat_period = 60.0 / bpm_target
+
+    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+    samples = np.zeros_like(t, dtype=np.float32)
+
+    for i, beat_t in enumerate(np.arange(0.2, duration, beat_period)):
+        idx = int(beat_t * sr)
+        amp = 1.0 if (i % 4 == 0) else 0.5
+        decay = np.exp(-np.linspace(0, 10, int(0.05 * sr), dtype=np.float32))
+        end_idx = min(idx + len(decay), len(samples))
+        samples[idx:end_idx] += amp * decay[: end_idx - idx]
+
+    audio = AudioData(samples=samples, sample_rate=sr, duration_seconds=duration)
+    analyzer = BeatThisAnalyzer()
+    grid = analyzer.analyze(audio)
+
+    # 160 BPMに対して107などの誤判定にならず、150〜170の範囲で検出されることを検証
+    assert 150.0 <= grid.bpm <= 170.0
+    assert len(grid.beat_times) >= 20
+    assert grid.beat_times[0] == 0.0
+    assert len(grid.downbeat_times) > 0
+
+
+def test_calculate_bpm_from_beats_resolves_50fps_quantization() -> None:
+    import numpy as np
+    from chordpulse.beats import _calculate_bpm_from_beats
+
+    # 160 BPM の真の拍位置 (0.375秒刻み)
+    true_beats = np.arange(0.2, 30.0, 0.375)
+    # 50 FPS（0.02秒刻み）で量子化されたタイムスタンプ
+    quantized_beats = np.round(true_beats * 50) / 50
+
+    # 従来の中央値計算では 60 / 0.38 = 157.89 となる
+    median_bpm = 60.0 / float(np.median(np.diff(quantized_beats)))
+    assert median_bpm == pytest.approx(157.89, abs=0.01)
+
+    # 線形回帰による算出では 160.0 に補正されることを検証
+    calculated_bpm = _calculate_bpm_from_beats(quantized_beats)
+    assert calculated_bpm == 160.0
+
+

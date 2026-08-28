@@ -44,7 +44,7 @@ class MusicXmlGenerator:
         result: AnalysisResult,
         output_path: Path,
         *,
-        rhythm_level: RhythmLevel,
+        rhythm_level: RhythmLevel = None,
         title: str = "ChordPulse Master Chord Chart",
     ) -> Path:
         try:
@@ -52,12 +52,9 @@ class MusicXmlGenerator:
         except ImportError as exc:  # pragma: no cover - depends on optional installation
             raise MusicXmlGenerationError("music21がインストールされていません") from exc
 
-        if rhythm_level not in (1, 2, 3):
-            raise MusicXmlGenerationError("rhythm_levelは1、2、または3でなければなりません")
-
         output_path = output_path.expanduser().resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        beat_seconds = 60.0 / result.bpm
+        beat_seconds = 60.0 / result.bpm if result.bpm > 0 else 0.5
         origin = result.beat_times[0] if result.beat_times else 0.0
         total_beats = max(
             result.beats_per_measure,
@@ -77,42 +74,15 @@ class MusicXmlGenerator:
             if measure_index == 0:
                 measure.insert(0, meter.TimeSignature(f"{result.beats_per_measure}/4"))
                 measure.insert(0, tempo.MetronomeMark(number=round(result.bpm, 2)))
-            if rhythm_level == 1:
-                _render_simple_measure(
-                    measure,
-                    timeline,
-                    origin,
-                    beat_seconds,
-                    result.beats_per_measure,
-                    measure_index,
-                    note,
-                    harmony,
-                    duration,
-                )
-            elif rhythm_level == 2:
-                _render_quarter_measure(
-                    measure,
-                    timeline,
-                    origin,
-                    beat_seconds,
-                    result.beats_per_measure,
-                    measure_index,
-                    note,
-                    harmony,
-                    duration,
-                )
-            else:
-                _render_rhythm_measure(
-                    measure,
-                    timeline,
-                    result,
-                    origin,
-                    beat_seconds,
-                    measure_index,
-                    note,
-                    harmony,
-                    duration,
-                )
+            _render_adaptive_measure(
+                measure,
+                timeline,
+                result,
+                measure_index,
+                note,
+                harmony,
+                duration,
+            )
             part.append(measure)
 
         score.insert(0, part)
@@ -143,13 +113,36 @@ class _ChordTimeline:
 
 
 def _measure_time(
-    origin: float,
-    beat_seconds: float,
-    beats_per_measure: int,
+    result: AnalysisResult,
     measure: int,
     beat: int,
 ) -> float:
-    return origin + (measure * beats_per_measure + beat) * beat_seconds
+    index = measure * result.beats_per_measure + beat
+    beat_times = result.beat_times
+    if not beat_times:
+        bpm = result.bpm if result.bpm > 0 else 120.0
+        return index * (60.0 / bpm)
+    if index < len(beat_times):
+        return beat_times[index]
+    
+    last_time = beat_times[-1]
+    bpm = result.bpm if result.bpm > 0 else 120.0
+    excess_beats = index - (len(beat_times) - 1)
+    return last_time + excess_beats * (60.0 / bpm)
+
+
+def _subdivision_time(
+    result: AnalysisResult,
+    measure: int,
+    subdivision: int,
+) -> float:
+    beat = subdivision // 2
+    is_off_beat = (subdivision % 2) != 0
+    t1 = _measure_time(result, measure, beat)
+    if not is_off_beat:
+        return t1
+    t2 = _measure_time(result, measure, beat + 1)
+    return (t1 + t2) / 2.0
 
 
 def _insert_chord_symbol(measure, label: str, offset: float, harmony, duration) -> None:
@@ -167,90 +160,52 @@ def _slash_note(note, duration, length: float):
     return value
 
 
-def _render_simple_measure(
+def _render_adaptive_measure(
     measure,
-    timeline,
-    origin,
-    beat_seconds,
-    beats_per_measure,
-    measure_index,
+    timeline: _ChordTimeline,
+    result: AnalysisResult,
+    measure_index: int,
     note,
     harmony,
     duration,
 ) -> None:
-    """レベル1の表記をレンダリングします：デフォルトでは全音符、小節の中間点（拍数 // 2）で
-    コードが変わる場合は2つの二分音符になります。
-
-    これにより、出力を読みやすく保ちつつ（このレベルではより小さい音価は使用されません）、「全音符・二分音符を基本とする」という仕様要件を満たします。
+    """小節内のコードチェンジタイミングと長さに応じて、最適な音価（全音符、2分音符、4分音符、8分音符等）
+    のスラッシュ音符およびコードシンボルをレンダリングします。
     """
-    half = beats_per_measure // 2
-    start_seconds = _measure_time(origin, beat_seconds, beats_per_measure, measure_index, 0)
-    half_seconds = _measure_time(origin, beat_seconds, beats_per_measure, measure_index, half)
-    label_start = timeline.label_at(start_seconds)
-    label_half = timeline.label_at(half_seconds)
+    beats_per_measure = result.beats_per_measure
+    subdivision_count = beats_per_measure * 2  # 8分音符スロット (各 0.5 拍)
 
-    if label_start == label_half:
-        # 単一のコードが小節全体をカバーしている場合 — 全音符1つを使用します。
-        _insert_chord_symbol(measure, label_start, 0.0, harmony, duration)
-        measure.insert(0.0, _slash_note(note, duration, float(beats_per_measure)))
-    else:
-        # 中間点でコードが変化する場合 — 二分音符2つを使用します。
-        _insert_chord_symbol(measure, label_start, 0.0, harmony, duration)
-        measure.insert(0.0, _slash_note(note, duration, float(half)))
-        _insert_chord_symbol(measure, label_half, float(half), harmony, duration)
-        measure.insert(float(half), _slash_note(note, duration, float(beats_per_measure - half)))
+    # 各スロット（0.5拍単位）のコードラベルを取得
+    slot_labels: list[str] = []
+    for sub in range(subdivision_count):
+        t = _subdivision_time(result, measure_index, sub)
+        slot_labels.append(timeline.label_at(t))
 
+    # 連続する同じコードラベルのスロットをセグメントにまとめる
+    segments: list[tuple[str, float, float]] = []  # (label, offset, length)
+    current_label = slot_labels[0]
+    current_start = 0.0
+    current_len = 0.5
 
-def _render_quarter_measure(
-    measure,
-    timeline,
-    origin,
-    beat_seconds,
-    beats_per_measure,
-    measure_index,
-    note,
-    harmony,
-    duration,
-) -> None:
-    previous_label = None
-    for beat in range(beats_per_measure):
-        seconds = _measure_time(origin, beat_seconds, beats_per_measure, measure_index, beat)
-        offset = float(beat)
-        label = timeline.label_at(seconds)
-        if label != previous_label:
-            _insert_chord_symbol(measure, label, offset, harmony, duration)
-            previous_label = label
-        measure.insert(offset, _slash_note(note, duration, 1.0))
-
-
-def _render_rhythm_measure(
-    measure,
-    timeline,
-    result,
-    origin,
-    beat_seconds,
-    measure_index,
-    note,
-    harmony,
-    duration,
-) -> None:
-    previous_label = None
-    subdivision_count = result.beats_per_measure * 2
-    subdivision_seconds = beat_seconds / 2
-    onset_tolerance = subdivision_seconds * 0.35
-    for subdivision in range(subdivision_count):
-        seconds = origin + (
-            measure_index * result.beats_per_measure * beat_seconds
-            + subdivision * subdivision_seconds
-        )
-        offset = subdivision * 0.5
-        label = timeline.label_at(seconds)
-        if label != previous_label:
-            _insert_chord_symbol(measure, label, offset, harmony, duration)
-            previous_label = label
-        is_onset = any(abs(onset - seconds) <= onset_tolerance for onset in result.onset_times)
-        if is_onset:
-            measure.insert(offset, _slash_note(note, duration, 0.5))
+    for sub in range(1, subdivision_count):
+        label = slot_labels[sub]
+        if label == current_label:
+            current_len += 0.5
         else:
-            measure.insert(offset, note.Rest(quarterLength=0.5))
+            segments.append((current_label, current_start, current_len))
+            current_label = label
+            current_start = sub * 0.5
+            current_len = 0.5
+    segments.append((current_label, current_start, current_len))
 
+    # 各セグメントをレンダリング
+    previous_label = None
+    for label, offset, length in segments:
+        if label != "N" and label != previous_label:
+            _insert_chord_symbol(measure, label, offset, harmony, duration)
+            previous_label = label
+
+        if label == "N":
+            measure.insert(offset, note.Rest(quarterLength=length))
+        else:
+            measure.insert(offset, _slash_note(note, duration, length))

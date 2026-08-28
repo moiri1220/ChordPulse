@@ -186,7 +186,7 @@ ALLOWED_CHORD_ENGINES = {"btc", "viterbi", "harmonic", "template"}
 def _analysis_worker(
     audio_path: str,
     output_path: str,
-    rhythm_level: int,
+    rhythm_level: int | None,
     chord_engine: str,
     result_queue,
 ) -> None:
@@ -209,7 +209,7 @@ def _run_isolated_analysis(
     audio_path: Path,
     output_path: Path,
     *,
-    rhythm_level: int,
+    rhythm_level: int | None,
     chord_engine: str,
     timeout_seconds: float,
 ) -> dict[str, str]:
@@ -244,7 +244,7 @@ def _validate_request(
     *,
     upload: UploadFile | None,
     youtube_url: str | None,
-    rhythm_level: int,
+    rhythm_level: int | None,
     chord_engine: str,
     lawful_use_confirmation: bool,
 ) -> str | None:
@@ -255,7 +255,7 @@ def _validate_request(
             status_code=400,
             detail="file または youtube_url のいずれか一方のみを指定する必要があります",
         )
-    if rhythm_level not in {1, 2, 3}:
+    if rhythm_level is not None and rhythm_level not in {1, 2, 3}:
         raise HTTPException(status_code=400, detail="rhythm_level は 1, 2, 3 のいずれかでなければなりません")
     if chord_engine.strip().lower() not in ALLOWED_CHORD_ENGINES:
         allowed = ", ".join(sorted(ALLOWED_CHORD_ENGINES))
@@ -317,6 +317,7 @@ def create_app(
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type"],
+        expose_headers=["X-ChordPulse-BPM", "X-ChordPulse-Chord-Engine"],
     )
     analysis_gate = AnalysisGate(max_concurrent_analyses)
 

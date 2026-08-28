@@ -25,7 +25,7 @@ function errorMessageFrom(response: Response, body: unknown): string {
   // APIの例外詳細メッセージ（英語や実装詳細を含む場合あり）にフォールバックする前に、
   // 既知のステータスコードを適切な日本語メッセージで処理します。
   if (response.status === 400) {
-    return "入力内容に誤りがあります。ファイル・URL・リズムレベルを確認して再試行してください。";
+    return "入力内容に誤りがあります。ファイルまたはURLを確認して再試行してください。";
   }
   if (response.status === 403) {
     return "この操作は許可されていません。利用条件の確認が必要です。";
@@ -117,7 +117,6 @@ export default function HomePage() {
   const [sourceMode, setSourceMode] = useState<SourceMode>("file");
   const [file, setFile] = useState<File | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [rhythmLevel, setRhythmLevel] = useState("2");
   const [chordEngine, setChordEngine] = useState("btc");
   const [lawfulUseConfirmation, setLawfulUseConfirmation] = useState(false);
   const [status, setStatus] = useState<AnalysisStatus>("idle");
@@ -129,7 +128,6 @@ export default function HomePage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileInputId = useId();
-  const rhythmSelectId = useId();
   const chordEngineSelectId = useId();
   const consentCheckboxId = useId();
 
@@ -241,7 +239,7 @@ export default function HomePage() {
     }
 
     const formData = new FormData();
-    formData.set("rhythm_level", rhythmLevel);
+    formData.set("rhythm_level", "2");
     formData.set("chord_engine", chordEngine);
     formData.set("lawful_use_confirmation", "true");
     if (sourceMode === "file" && file) {
@@ -426,22 +424,6 @@ export default function HomePage() {
                 />
               </div>
             )}
-
-            <div className="form-group">
-              <label className="field-label" htmlFor={rhythmSelectId}>
-                リズム表記レベル
-              </label>
-              <select
-                className="select-input"
-                id={rhythmSelectId}
-                onChange={(event) => setRhythmLevel(event.target.value)}
-                value={rhythmLevel}
-              >
-                <option value="1">レベル1：シンプル（全音符・二分音符ベース）</option>
-                <option value="2">レベル2：基本スラッシュ（4分音符スラッシュ ////）</option>
-                <option value="3">レベル3：リズムスラッシュ（Onsetベースの8分音符打ち分け）</option>
-              </select>
-            </div>
 
             <div className="form-group">
               <label className="field-label" htmlFor={chordEngineSelectId}>

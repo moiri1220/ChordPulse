@@ -31,3 +31,22 @@ def test_pipeline_analyzes_a_synthetic_click_and_writes_musicxml(tmp_path) -> No
     assert result.chords
     parsed = converter.parse(output)
     assert len(parsed.parts) == 1
+
+
+def test_align_downbeat_offset() -> None:
+    from chordpulse.pipeline import _align_downbeat_offset
+
+    # 4拍子の曲で、0.5秒間隔のビート
+    beat_times = tuple(i * 0.5 for i in range(20))
+
+    # ダウンビートがインデックス0, 4, 8...にある場合 -> オフセットは0
+    downbeat_times = (0.0, 2.0, 4.0, 6.0)
+    assert _align_downbeat_offset(beat_times, downbeat_times, 4) == 0
+
+    # ダウンビートがインデックス2, 6, 10...にある場合 -> オフセットは2
+    downbeat_times = (1.0, 3.0, 5.0, 7.0)
+    assert _align_downbeat_offset(beat_times, downbeat_times, 4) == 2
+
+    # ダウンビートが空の場合 -> 0
+    assert _align_downbeat_offset(beat_times, (), 4) == 0
+

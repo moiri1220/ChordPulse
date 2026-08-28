@@ -148,3 +148,54 @@ def test_musicxml_generator_handles_flat_root_chords(tmp_path) -> None:
         assert out.is_file(), f"rhythm_level={level} で MusicXML が生成されなかった"
         assert "score-partwise" in out.read_text(encoding="utf-8")
 
+
+def test_adaptive_rhythm_quarter_notes(tmp_path) -> None:
+    """各拍でコードが変わる場合、4つの4分音符スラッシュが生成されること。"""
+    output = tmp_path / "quarter_chart.musicxml"
+    result = AnalysisResult(
+        bpm=120.0,
+        duration_seconds=2.0,
+        beat_times=(0.0, 0.5, 1.0, 1.5),
+        onset_times=(),
+        chords=(
+            ChordEvent(0.0, 0.5, "C"),
+            ChordEvent(0.5, 1.0, "Dm"),
+            ChordEvent(1.0, 1.5, "G"),
+            ChordEvent(1.5, 2.0, "C"),
+        ),
+        chord_engine="test",
+    )
+
+    MusicXmlGenerator().generate(result, output)
+
+    parsed = converter.parse(output)
+    notes = list(parsed.parts[0].recurse().getElementsByClass("Note"))
+    assert len(notes) == 4
+    assert all(n.quarterLength == 1.0 for n in notes)
+    symbols = list(parsed.parts[0].recurse().getElementsByClass("ChordSymbol"))
+    assert len(symbols) == 4
+
+
+def test_adaptive_rhythm_syncopation(tmp_path) -> None:
+    """裏拍（1.5拍）でコードが変わるシンコペーションで、付点4分音符（1.5）が生成されること。"""
+    output = tmp_path / "syncopation_chart.musicxml"
+    result = AnalysisResult(
+        bpm=120.0,
+        duration_seconds=2.0,
+        beat_times=(0.0, 0.5, 1.0, 1.5),
+        onset_times=(),
+        # Cが1.5拍(0.75秒), Gが2.5拍(1.25秒)
+        chords=(
+            ChordEvent(0.0, 0.75, "C"),
+            ChordEvent(0.75, 2.0, "G"),
+        ),
+        chord_engine="test",
+    )
+
+    MusicXmlGenerator().generate(result, output)
+
+    parsed = converter.parse(output)
+    notes = list(parsed.parts[0].recurse().getElementsByClass("Note"))
+    # Cは1.5拍(付点4分音符)、Gは2.5拍
+    assert notes[0].quarterLength == 1.5
+

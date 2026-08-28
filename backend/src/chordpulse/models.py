@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-RhythmLevel = Literal[1, 2, 3]
+RhythmLevel = Literal[1, 2, 3] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +28,7 @@ class BeatGrid:
     beat_times: tuple[float, ...]
     onset_times: tuple[float, ...]
     beats_per_measure: int = 4
+    downbeat_times: tuple[float, ...] = ()
 
     @property
     def seconds_per_beat(self) -> float:

@@ -637,7 +637,7 @@ class BtcChordRecognizer:
         valid_frames = len(concat_preds) - num_pad
         frame_preds = concat_preds[:valid_frames]
 
-        # 拍グリッドへのマッピング
+        # 拍・半拍（8分音符単位）への高解像度マッピング
         beat_times = beat_grid.beat_times
         beat_seconds = beat_grid.seconds_per_beat
         raw_events: list[ChordEvent] = []
@@ -645,33 +645,39 @@ class BtcChordRecognizer:
         for index, start in enumerate(beat_times):
             if start >= audio.duration_seconds:
                 continue
-            end = beat_times[index + 1] if index + 1 < len(beat_times) else start + beat_seconds
-            end = min(float(end), audio.duration_seconds)
-            if end <= start:
+            next_beat = beat_times[index + 1] if index + 1 < len(beat_times) else start + beat_seconds
+            next_beat = min(float(next_beat), audio.duration_seconds)
+            if next_beat <= start:
                 continue
 
-            f_start = int(round(start / time_unit))
-            f_end = int(round(end / time_unit))
-            f_start = max(0, min(f_start, len(frame_preds) - 1))
-            f_end = max(f_start + 1, min(f_end, len(frame_preds)))
+            # 1拍を前半（表拍）と後半（裏拍）に分割して集計
+            mid = (start + next_beat) / 2.0
+            subdivisions = [(start, mid), (mid, next_beat)]
 
-            slice_preds = frame_preds[f_start:f_end]
-            if len(slice_preds) == 0:
-                label = "N"
-            else:
-                # 拍区間内での最頻コードを採用
-                counts = np.bincount(slice_preds)
-                best_idx = int(np.argmax(counts))
-                label = self._vocab.get(best_idx, "N")
+            for sub_start, sub_end in subdivisions:
+                if sub_end <= sub_start:
+                    continue
+                f_start = int(round(sub_start / time_unit))
+                f_end = int(round(sub_end / time_unit))
+                f_start = max(0, min(f_start, len(frame_preds) - 1))
+                f_end = max(f_start + 1, min(f_end, len(frame_preds)))
 
-            raw_events.append(
-                ChordEvent(
-                    start_seconds=float(start),
-                    end_seconds=end,
-                    label=label,
-                    confidence=0.95 if label != "N" else 0.0,
+                slice_preds = frame_preds[f_start:f_end]
+                if len(slice_preds) == 0:
+                    label = "N"
+                else:
+                    counts = np.bincount(slice_preds)
+                    best_idx = int(np.argmax(counts))
+                    label = self._vocab.get(best_idx, "N")
+
+                raw_events.append(
+                    ChordEvent(
+                        start_seconds=float(sub_start),
+                        end_seconds=float(sub_end),
+                        label=label,
+                        confidence=0.95 if label != "N" else 0.0,
+                    )
                 )
-            )
 
         return ChromagramChordRecognizer._merge_adjacent(raw_events)
 

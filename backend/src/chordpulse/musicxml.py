@@ -181,6 +181,18 @@ def _render_adaptive_measure(
         t = _subdivision_time(result, measure_index, sub)
         slot_labels.append(timeline.label_at(t))
 
+    # アンティシペーション（食って入るコード）の平滑化
+    # 小節の最後の0.5拍だけコードが変わっており、かつそれが次の小節の頭のコードと同じ場合、
+    # その小節内ではコードチェンジせず、直前のコードを維持する（次の小節の頭にクオンタイズする）。
+    if len(slot_labels) >= 2:
+        last_label = slot_labels[-1]
+        prev_label = slot_labels[-2]
+        if last_label != prev_label:
+            t_next = _subdivision_time(result, measure_index + 1, 0)
+            next_measure_label = timeline.label_at(t_next)
+            if last_label == next_measure_label:
+                slot_labels[-1] = prev_label
+
     # 連続する同じコードラベルのスロットをセグメントにまとめる
     segments: list[tuple[str, float, float]] = []  # (label, offset, length)
     current_label = slot_labels[0]

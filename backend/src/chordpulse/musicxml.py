@@ -185,10 +185,23 @@ def _render_adaptive_measure(
         t = _subdivision_time(result, measure_index, sub)
         slot_labels.append(timeline.label_at(t))
 
-    # アンティシペーション（食って入るコード）の平滑化
-    # 小節の最後の0.5拍だけコードが変わっており、かつそれが次の小節の頭のコードと同じ場合、
-    # その小節内ではコードチェンジせず、直前のコードを維持する（次の小節の頭にクオンタイズする）。
+    # アンティシペーションおよびディレイ（スピルオーバー）の平滑化
+    # 小節の境界付近での0.5拍のズレを吸収し、クオンタイズします。
     if anticipation_smoothing and len(slot_labels) >= 2:
+        # 1. ディレイ（スピルオーバー）の平滑化
+        # 小節の最初の0.5拍だけ前の小節の最後のコードが残っており、その後別のコードに変わる場合、
+        # 最初の0.5拍を次のコードで上書きし、小節の頭から新しいコードにクオンタイズする。
+        first_label = slot_labels[0]
+        second_label = slot_labels[1]
+        if first_label != second_label and measure_index > 0:
+            t_prev = _subdivision_time(result, measure_index - 1, subdivision_count - 1)
+            prev_measure_label = timeline.label_at(t_prev)
+            if first_label == prev_measure_label:
+                slot_labels[0] = second_label
+
+        # 2. アンティシペーションの平滑化
+        # 小節の最後の0.5拍だけコードが変わっており、かつそれが次の小節の頭のコードと同じ場合、
+        # その小節内ではコードチェンジせず、直前のコードを維持する。
         last_label = slot_labels[-1]
         prev_label = slot_labels[-2]
         if last_label != prev_label:

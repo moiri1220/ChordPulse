@@ -88,7 +88,7 @@ class LibrosaBeatAnalyzer:
             units="frames",
         )
         tempo_values = np.asarray(tempo).reshape(-1)
-        bpm = float(tempo_values[0]) if tempo_values.size else 0.0
+        bpm = float(round(tempo_values[0])) if tempo_values.size else 0.0
         if bpm <= 0:
             raise BeatAnalysisError("正のBPMを推定できませんでした")
 
@@ -181,12 +181,9 @@ def _calculate_bpm_from_beats(beat_times_list: list[float] | tuple[float, ...]) 
     median_slope = float(np.median(slopes))
     if median_slope > 0:
         raw_bpm = 60.0 / median_slope
-        # 一般的なポップス等の整数BPMに近い場合（±0.15以内）は整数へスナップ
-        if abs(raw_bpm - round(raw_bpm)) < 0.15:
-            return float(round(raw_bpm))
-        return float(round(raw_bpm, 2))
+        return float(round(raw_bpm))
 
-    return float(round(60.0 / median_diff, 2))
+    return float(round(60.0 / median_diff))
 
 
 class BeatThisAnalyzer:

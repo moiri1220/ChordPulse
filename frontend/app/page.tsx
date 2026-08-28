@@ -507,7 +507,7 @@ export default function HomePage() {
               <h2 id="score-title">生成されたマスターコード譜</h2>
               <div className="score-meta">
                 <span className="meta-item">
-                  <strong>推定 BPM:</strong> {output.bpm ? Number(output.bpm).toFixed(1) : "取得不可"}
+                  <strong>推定 BPM:</strong> {output.bpm ? Math.round(Number(output.bpm)) : "取得不可"}
                 </span>
                 {output.chordEngine && (
                   <span className="meta-item">

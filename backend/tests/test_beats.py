@@ -130,3 +130,17 @@ def test_calculate_bpm_from_beats_resolves_50fps_quantization() -> None:
     assert calculated_bpm == 160.0
 
 
+def test_calculate_bpm_from_beats_rounds_decimals_to_integer() -> None:
+    import numpy as np
+    from chordpulse.beats import _calculate_bpm_from_beats
+
+    # 120.4 BPM (拍間隔 60/120.4 ≈ 0.498338s) -> 四捨五入で 120.0
+    beats_120_4 = np.arange(0.0, 20.0, 60.0 / 120.4)
+    assert _calculate_bpm_from_beats(beats_120_4) == 120.0
+
+    # 120.6 BPM (拍間隔 60/120.6 ≈ 0.497512s) -> 四捨五入で 121.0
+    beats_120_6 = np.arange(0.0, 20.0, 60.0 / 120.6)
+    assert _calculate_bpm_from_beats(beats_120_6) == 121.0
+
+
+

@@ -1,7 +1,7 @@
 from music21 import converter
 
 from chordpulse.models import AnalysisResult, ChordEvent
-from chordpulse.musicxml import MusicXmlGenerator, _ChordTimeline
+from chordpulse.musicxml import MusicXmlGenerator, _ChordTimeline, _to_music21_label
 
 
 def test_musicxml_generator_writes_a_score(tmp_path) -> None:
@@ -100,3 +100,52 @@ def test_chord_timeline_unsorted_input_is_handled() -> None:
     assert timeline.label_at(0.5) == "C"
     assert timeline.label_at(1.5) == "Am"
     assert timeline.label_at(2.5) == "F"
+
+
+def test_to_music21_label_converts_flat_roots() -> None:
+    """♭系ルートは music21 の '-' 表記に変換されなければならない。"""
+    assert _to_music21_label("Bb") == "B-"
+    assert _to_music21_label("Bbm") == "B-m"
+    assert _to_music21_label("Bbm7") == "B-m7"
+    assert _to_music21_label("Bb7") == "B-7"
+    assert _to_music21_label("Eb") == "E-"
+    assert _to_music21_label("Ebm7") == "E-m7"
+    assert _to_music21_label("Ab") == "A-"
+    assert _to_music21_label("Abm7") == "A-m7"
+    assert _to_music21_label("Db") == "D-"
+    assert _to_music21_label("Gb") == "G-"
+    # シャープ系・N はそのまま
+    assert _to_music21_label("C") == "C"
+    assert _to_music21_label("C#m7") == "C#m7"
+    assert _to_music21_label("Bm7") == "Bm7"
+    assert _to_music21_label("N") == "N"
+
+
+def test_musicxml_generator_handles_flat_root_chords(tmp_path) -> None:
+    """♭系ルートのコード（Bb, Eb, Ab）を含む譜面が正常に生成されること。
+
+    回帰テスト: music21 は 'Bb' を無効とし ValueError を投げるが、
+    '_to_music21_label' による変換後は 'B-' として受け付けられる。
+    """
+    output = tmp_path / "flat_chords.musicxml"
+    result = AnalysisResult(
+        bpm=120.0,
+        duration_seconds=8.0,
+        beat_times=tuple(i * 0.5 for i in range(16)),
+        onset_times=(),
+        chords=(
+            ChordEvent(0.0, 2.0, "Bb"),
+            ChordEvent(2.0, 4.0, "Bbm7"),
+            ChordEvent(4.0, 6.0, "Eb"),
+            ChordEvent(6.0, 8.0, "Abm7"),
+        ),
+        chord_engine="test",
+    )
+
+    # rhythm_level=1, 2, 3 いずれも例外なく生成できること
+    for level in (1, 2, 3):
+        out = tmp_path / f"flat_level{level}.musicxml"
+        MusicXmlGenerator().generate(result, out, rhythm_level=level)
+        assert out.is_file(), f"rhythm_level={level} で MusicXML が生成されなかった"
+        assert "score-partwise" in out.read_text(encoding="utf-8")
+

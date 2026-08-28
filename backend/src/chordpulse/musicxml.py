@@ -14,6 +14,28 @@ class MusicXmlGenerationError(RuntimeError):
     """MusicXMLを生成できない場合に発生する例外。"""
 
 
+# chords.py の PITCH_NAMES は "Bb"/"Eb"/"Ab" 等の慣用表記を使うが、
+# music21 の ChordSymbol はフラット記号を "-"（ハイフン）で表現する。
+# 例: "Bb" -> "B-", "Bbm7" -> "B-m7"
+# この変換は表示層（MusicXML生成）に閉じ込め、内部表現を変更しない。
+_FLAT_ROOTS = ("Bb", "Eb", "Ab", "Db", "Gb")
+_FLAT_ROOT_TO_MUSIC21 = {root: root[0] + "-" for root in _FLAT_ROOTS}
+
+
+def _to_music21_label(label: str) -> str:
+    """コードラベルを music21 ChordSymbol が受け付ける形式に変換する。
+
+    "Bb" -> "B-"、"Bbm7" -> "B-m7" のようにルート音のフラット記法を変換する。
+    "N"（無音）はそのまま返す。
+    """
+    if label == "N":
+        return label
+    for flat_root, music21_root in _FLAT_ROOT_TO_MUSIC21.items():
+        if label.startswith(flat_root):
+            return music21_root + label[len(flat_root):]
+    return label
+
+
 class MusicXmlGenerator:
     """music21を使用して、スラッシュ表記とコードシンボルをレンダリングします。"""
 
@@ -133,7 +155,7 @@ def _measure_time(
 def _insert_chord_symbol(measure, label: str, offset: float, harmony, duration) -> None:
     if label == "N":
         return
-    symbol = harmony.ChordSymbol(label)
+    symbol = harmony.ChordSymbol(_to_music21_label(label))
     symbol.duration = duration.Duration(0)
     measure.insert(offset, symbol)
 

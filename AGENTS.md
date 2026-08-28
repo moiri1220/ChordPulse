@@ -24,6 +24,20 @@
 - 音源の適法利用を最優先し、著作権法第30条の4の情報解析に該当する範囲で、解析目的・保存期間・出力範囲を守る。法的適法性を自己申告だけで保証しない。
 - 仕様変更や運用手順の追加・変更が必要になった場合は、コードだけでなく関連ドキュメントも更新する。特に運用に関する情報（ローカル起動手順、本番環境向けの考慮事項、環境変数等）が増えた場合は、必ず `docs/operations-guide.md` に追記・更新する。
 
+### 2.1 アーキテクチャと主要コンポーネント
+- **バックエンド (`backend/src/chordpulse/`)**:
+  - `api.py`: FastAPIエンドポイント（`/api/analyze` など）
+  - `pipeline.py`: 音声取得から解析、MusicXML生成までのメインパイプライン
+  - `audio.py`: 音声読み込み、正規化、YouTube取得（`yt-dlp`）
+  - `beats.py`: BPM・拍解析（`librosa`）
+  - `chords.py`: コード推定エンジン。**`btc` (Bi-directional Transformer) がデフォルト**
+  - `btc_model.py`: 深層学習BTCモデル定義（PyTorch）
+  - `musicxml.py`: 解析結果からMusicXMLを生成（`music21`）
+  - `cli.py`: CLI実行インターフェース
+- **フロントエンド (`frontend/`)**:
+  - Next.js (TypeScript, Tailwind CSS)
+  - `opensheetmusicdisplay` (OSMD) による譜面描画
+- **詳細な構成**: [ARCHITECTURE.md](ARCHITECTURE.md) を参照。
 
 ## 3. エージェントの役割分担
 

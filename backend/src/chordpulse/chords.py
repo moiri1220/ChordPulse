@@ -521,10 +521,12 @@ class BtcChordRecognizer:
         model_path: Path | None = None,
         device: str | None = None,
         confidence_threshold: float = 0.5,
+        beat_subdivision: float = 0.25,
     ) -> None:
         self.model_path = model_path
         self.device_str = device
         self.confidence_threshold = confidence_threshold
+        self.beat_subdivision = beat_subdivision
         self._vocab = _get_btc_chord_vocab()
         self._model = None
         self._mean = -2.2279878897355596
@@ -565,7 +567,13 @@ class BtcChordRecognizer:
         self._model = model
         return self._model
 
-    def recognize(self, audio: AudioData, beat_grid: BeatGrid) -> tuple[ChordEvent, ...]:
+    def recognize(
+        self,
+        audio: AudioData,
+        beat_grid: BeatGrid,
+        *,
+        beat_subdivision: float | None = None,
+    ) -> tuple[ChordEvent, ...]:
         try:
             import librosa
             import numpy as np
@@ -618,8 +626,8 @@ class BtcChordRecognizer:
         feature = feature.T
         feature = (feature - self._mean) / self._std
 
-        num_pad = timestep - (feature.shape[0] % timestep)
-        if num_pad < timestep:
+        num_pad = (timestep - (feature.shape[0] % timestep)) % timestep
+        if num_pad > 0:
             feature = np.pad(feature, ((0, num_pad), (0, 0)), mode="constant", constant_values=0)
         num_instances = feature.shape[0] // timestep
 
@@ -637,7 +645,10 @@ class BtcChordRecognizer:
         valid_frames = len(concat_preds) - num_pad
         frame_preds = concat_preds[:valid_frames]
 
-        # 拍・半拍（8分音符単位）への高解像度マッピング
+        # 拍グリッドへのマッピング（0.5拍または0.25拍単位）
+        sub_val = beat_subdivision if beat_subdivision is not None else self.beat_subdivision
+        divs = 2 if sub_val >= 0.5 else 4
+
         beat_times = beat_grid.beat_times
         beat_seconds = beat_grid.seconds_per_beat
         raw_events: list[ChordEvent] = []
@@ -650,9 +661,12 @@ class BtcChordRecognizer:
             if next_beat <= start:
                 continue
 
-            # 1拍を前半（表拍）と後半（裏拍）に分割して集計
-            mid = (start + next_beat) / 2.0
-            subdivisions = [(start, mid), (mid, next_beat)]
+            # 1拍を分割（0.5拍=2分割、0.25拍=4分割）して集計
+            step = (next_beat - start) / float(divs)
+            subdivisions = [
+                (start + i * step, start + (i + 1) * step)
+                for i in range(divs)
+            ]
 
             for sub_start, sub_end in subdivisions:
                 if sub_end <= sub_start:
@@ -667,7 +681,17 @@ class BtcChordRecognizer:
                     label = "N"
                 else:
                     counts = np.bincount(slice_preds)
-                    best_idx = int(np.argmax(counts))
+                    max_count = np.max(counts)
+                    tied_classes = np.where(counts == max_count)[0]
+                    if len(tied_classes) == 1:
+                        best_idx = int(tied_classes[0])
+                    else:
+                        # タイブレーク：同数の場合は、スロット前半の状態（元のコード）を優先して不用意な先取り（ノイズ）を防ぐ
+                        first_pred = int(slice_preds[0])
+                        if first_pred in tied_classes:
+                            best_idx = first_pred
+                        else:
+                            best_idx = int(tied_classes[0])
                     label = self._vocab.get(best_idx, "N")
 
                 raw_events.append(
@@ -682,7 +706,11 @@ class BtcChordRecognizer:
         return ChromagramChordRecognizer._merge_adjacent(raw_events)
 
 
-def create_chord_recognizer(engine: str = "btc") -> ChordRecognizer:
+def create_chord_recognizer(
+    engine: str = "btc",
+    *,
+    beat_subdivision: float = 0.25,
+) -> ChordRecognizer:
     """要求されたエンジンを暗黙的に変更することなく、名前付きコードエンジンを作成します。
 
     エンジン一覧:
@@ -695,7 +723,7 @@ def create_chord_recognizer(engine: str = "btc") -> ChordRecognizer:
 
     normalized = engine.strip().lower()
     if normalized in {"btc", "btc-transformer", "transformer"}:
-        return BtcChordRecognizer()
+        return BtcChordRecognizer(beat_subdivision=beat_subdivision)
     if normalized in {"viterbi", "viterbi-hmm", "librosa-viterbi-hmm"}:
         return ViterbiChordRecognizer()
     if normalized in {"harmonic", "librosa-harmonic-cqt"}:

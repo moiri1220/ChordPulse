@@ -121,10 +121,18 @@ class AnalysisPipeline:
         self.chord_recognizer = chord_recognizer or create_chord_recognizer(chord_engine)
         self.musicxml_generator = musicxml_generator or MusicXmlGenerator()
 
-    def analyze(self, audio_path: Path) -> AnalysisResult:
+    def analyze(
+        self,
+        audio_path: Path,
+        *,
+        beat_subdivision: float = 0.25,
+    ) -> AnalysisResult:
         audio = load_audio(audio_path)
         beat_grid = self.beat_analyzer.analyze(audio)
-        chords = self.chord_recognizer.recognize(audio, beat_grid)
+        try:
+            chords = self.chord_recognizer.recognize(audio, beat_grid, beat_subdivision=beat_subdivision)
+        except TypeError:
+            chords = self.chord_recognizer.recognize(audio, beat_grid)
 
         beat_times = beat_grid.beat_times
         beats_per_measure = beat_grid.beats_per_measure
@@ -165,10 +173,15 @@ class AnalysisPipeline:
         *,
         rhythm_level: RhythmLevel = None,
         anticipation_smoothing: bool = True,
+        beat_subdivision: float = 0.25,
     ) -> AnalysisResult:
-        result = self.analyze(audio_path)
+        result = self.analyze(audio_path, beat_subdivision=beat_subdivision)
         self.musicxml_generator.generate(
-            result, output_path, rhythm_level=rhythm_level, anticipation_smoothing=anticipation_smoothing
+            result,
+            output_path,
+            rhythm_level=rhythm_level,
+            anticipation_smoothing=anticipation_smoothing,
+            beat_subdivision=beat_subdivision,
         )
         return result
 

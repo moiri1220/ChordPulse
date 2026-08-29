@@ -189,6 +189,7 @@ def _analysis_worker(
     rhythm_level: int | None,
     chord_engine: str,
     anticipation_smoothing: bool,
+    beat_subdivision: float,
     result_queue,
 ) -> None:
     """タイムアウト時に強制終了できるプロセス内で指定されたコードエンジンのパイプラインを実行します。"""
@@ -199,6 +200,7 @@ def _analysis_worker(
             Path(output_path),
             rhythm_level=rhythm_level,
             anticipation_smoothing=anticipation_smoothing,
+            beat_subdivision=beat_subdivision,
         )
         result_queue.put(("success", _result_metadata(result)))
     except Exception:
@@ -214,13 +216,22 @@ def _run_isolated_analysis(
     rhythm_level: int | None,
     chord_engine: str,
     anticipation_smoothing: bool = True,
+    beat_subdivision: float = 0.25,
     timeout_seconds: float,
 ) -> dict[str, str]:
     context = multiprocessing.get_context("spawn")
     result_queue = context.Queue()
     process = context.Process(
         target=_analysis_worker,
-        args=(str(audio_path), str(output_path), rhythm_level, chord_engine, anticipation_smoothing, result_queue),
+        args=(
+            str(audio_path),
+            str(output_path),
+            rhythm_level,
+            chord_engine,
+            anticipation_smoothing,
+            beat_subdivision,
+            result_queue,
+        ),
     )
     process.start()
     try:
@@ -250,6 +261,7 @@ def _validate_request(
     rhythm_level: int | None,
     chord_engine: str,
     lawful_use_confirmation: bool,
+    beat_subdivision: float = 0.25,
 ) -> str | None:
     # MVP仕様§7: 入力不足・形式不正→400、利用条件違反→403、解析不能→422
     normalized_youtube_url = youtube_url.strip() if youtube_url else None
@@ -260,6 +272,8 @@ def _validate_request(
         )
     if rhythm_level is not None and rhythm_level not in {1, 2, 3}:
         raise HTTPException(status_code=400, detail="rhythm_level は 1, 2, 3 のいずれかでなければなりません")
+    if beat_subdivision not in {0.25, 0.5}:
+        raise HTTPException(status_code=400, detail="beat_subdivision は 0.25 または 0.5 でなければなりません")
     if chord_engine.strip().lower() not in ALLOWED_CHORD_ENGINES:
         allowed = ", ".join(sorted(ALLOWED_CHORD_ENGINES))
         raise HTTPException(
@@ -341,6 +355,7 @@ def create_app(
         chord_engine: Annotated[str, Form()] = "btc",
         lawful_use_confirmation: Annotated[bool, Form()] = False,
         anticipation_smoothing: Annotated[bool, Form()] = True,
+        beat_subdivision: Annotated[float, Form()] = 0.25,
     ) -> Response:
         normalized_youtube_url = _validate_request(
             upload=file,
@@ -348,6 +363,7 @@ def create_app(
             rhythm_level=rhythm_level,
             chord_engine=chord_engine,
             lawful_use_confirmation=lawful_use_confirmation,
+            beat_subdivision=beat_subdivision,
         )
 
         try:
@@ -374,6 +390,7 @@ def create_app(
                             rhythm_level=rhythm_level,
                             chord_engine=chord_engine.strip().lower(),
                             anticipation_smoothing=anticipation_smoothing,
+                            beat_subdivision=beat_subdivision,
                             timeout_seconds=analysis_timeout_seconds,
                         )
                     else:
@@ -382,6 +399,7 @@ def create_app(
                             output_path,
                             rhythm_level=rhythm_level,
                             anticipation_smoothing=anticipation_smoothing,
+                            beat_subdivision=beat_subdivision,
                         )
                         metadata = _result_metadata(result)
                     musicxml = output_path.read_bytes()

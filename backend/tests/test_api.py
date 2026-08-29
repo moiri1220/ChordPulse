@@ -11,12 +11,19 @@ class FakePipeline:
         self.rhythm_levels: list[int] = []
 
     def analyze_to_musicxml(
-        self, audio_path, output_path, *, rhythm_level, anticipation_smoothing=True
+        self,
+        audio_path,
+        output_path,
+        *,
+        rhythm_level,
+        anticipation_smoothing=True,
+        beat_subdivision=0.25,
     ):
         self.audio_paths.append(audio_path)
         self.rhythm_levels.append(rhythm_level)
         assert audio_path.is_file()
         assert rhythm_level in {1, 2, 3}
+        assert beat_subdivision in {0.25, 0.5}
         output_path.write_text("<score-partwise version='4.0' />", encoding="utf-8")
         return AnalysisResult(
             bpm=120.0,
@@ -128,6 +135,32 @@ def test_analyze_accepts_valid_chord_engines() -> None:
             "/analyze",
             files={"file": ("source.wav", b"RIFF-test", "audio/wav")},
             data={"chord_engine": engine, "lawful_use_confirmation": "true"},
+        )
+        assert response.status_code == 200
+
+
+def test_analyze_rejects_invalid_beat_subdivision() -> None:
+    client = TestClient(create_app(pipeline=FakePipeline()))
+
+    response = client.post(
+        "/analyze",
+        files={"file": ("source.wav", b"RIFF-test", "audio/wav")},
+        data={"beat_subdivision": "0.33", "lawful_use_confirmation": "true"},
+    )
+
+    assert response.status_code == 400
+    assert "beat_subdivision" in response.json()["detail"]
+
+
+def test_analyze_accepts_valid_beat_subdivisions() -> None:
+    pipeline = FakePipeline()
+    client = TestClient(create_app(pipeline=pipeline))
+
+    for sub in ("0.25", "0.5"):
+        response = client.post(
+            "/analyze",
+            files={"file": ("source.wav", b"RIFF-test", "audio/wav")},
+            data={"beat_subdivision": sub, "lawful_use_confirmation": "true"},
         )
         assert response.status_code == 200
 

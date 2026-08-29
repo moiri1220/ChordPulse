@@ -199,3 +199,124 @@ def test_adaptive_rhythm_syncopation(tmp_path) -> None:
     # Cは1.5拍(付点4分音符)、Gは2.5拍
     assert notes[0].quarterLength == 1.5
 
+
+def test_quarter_beat_anticipation_smoothed_away(tmp_path) -> None:
+    """小節末尾の0.25拍（1スロット）のみの食いはフライングノイズとして平滑化されること。
+
+    BPM=120, 4/4拍子: 1小節=2.0s, 0.25拍=0.125s。
+    小節1末尾のsub 15(1.875s)のみDが検出され、小節2もDの場合、
+    0.25拍は演奏の食い込みノイズとみなして平滑化する（不要なDを抑止）。
+    """
+    output = tmp_path / "quarter_anticipation.musicxml"
+    bpm = 120.0
+    spb = 60.0 / bpm
+    beat_times = tuple(i * spb for i in range(16))
+
+    result = AnalysisResult(
+        bpm=bpm,
+        duration_seconds=8.0,
+        beat_times=beat_times,
+        onset_times=(),
+        chords=(
+            ChordEvent(0.0, 1.85, "F#m"),  # sub 0..14 をカバー
+            ChordEvent(1.85, 4.0, "D"),     # sub 15 (1.875s) のみD (0.25拍)
+        ),
+        chord_engine="test",
+    )
+
+    MusicXmlGenerator().generate(result, output)
+
+    parsed = converter.parse(output)
+    measure_1 = parsed.parts[0].getElementsByClass("Measure")[0]
+    symbols = [s.figure for s in measure_1.recurse().getElementsByClass("ChordSymbol")]
+    assert "D" not in symbols, f"0.25拍の食いDが平滑化されずに残っている: {symbols}"
+
+
+def test_half_beat_anticipation_preserved(tmp_path) -> None:
+    """小節末尾の0.5拍（2スロット）のアウフタクトは保持されること。
+
+    BPM=120, 4/4拍子: 1小節=2.0s, 0.5拍=0.250s。
+    小節1末尾のsub 14(1.750s), sub 15(1.875s)からDが検出され、小節2もDの場合、
+    8分音符（0.5拍）のアウフタクトとして正しく保持されること。
+    """
+    output = tmp_path / "half_anticipation.musicxml"
+    bpm = 120.0
+    spb = 60.0 / bpm
+    beat_times = tuple(i * spb for i in range(16))
+
+    result = AnalysisResult(
+        bpm=bpm,
+        duration_seconds=8.0,
+        beat_times=beat_times,
+        onset_times=(),
+        chords=(
+            ChordEvent(0.0, 1.70, "F#m"),  # sub 0..13 をカバー
+            ChordEvent(1.70, 4.0, "D"),     # sub 14, 15 (1.75s, 1.875s) でD (0.5拍)
+        ),
+        chord_engine="test",
+    )
+
+    MusicXmlGenerator().generate(result, output)
+
+    parsed = converter.parse(output)
+    measure_1 = parsed.parts[0].getElementsByClass("Measure")[0]
+    symbols = [s.figure for s in measure_1.recurse().getElementsByClass("ChordSymbol")]
+    assert "D" in symbols, f"0.5拍のアウフタクトDが平滑化されて消えてしまっている: {symbols}"
+
+
+def test_unmatched_end_chord_smoothed_away(tmp_path) -> None:
+    """小節末尾のコードが次の小節の頭と異なる場合はノイズとして平滑化されること。"""
+    output = tmp_path / "unmatched_end.musicxml"
+    bpm = 120.0
+    spb = 60.0 / bpm
+    beat_times = tuple(i * spb for i in range(16))
+
+    result = AnalysisResult(
+        bpm=bpm,
+        duration_seconds=8.0,
+        beat_times=beat_times,
+        onset_times=(),
+        chords=(
+            ChordEvent(0.0, 1.70, "C"),
+            ChordEvent(1.70, 2.0, "E"),     # 小節1末尾に0.5拍だけE
+            ChordEvent(2.0, 4.0, "G"),      # 小節2の頭はG
+        ),
+        chord_engine="test",
+    )
+
+    MusicXmlGenerator().generate(result, output)
+
+    parsed = converter.parse(output)
+    measure_1 = parsed.parts[0].getElementsByClass("Measure")[0]
+    symbols = [s.figure for s in measure_1.recurse().getElementsByClass("ChordSymbol")]
+    assert "E" not in symbols, f"次の小節と不一致のノイズEが残っている: {symbols}"
+
+
+def test_half_beat_subdivision_mode_smooths_half_beat(tmp_path) -> None:
+    """beat_subdivision=0.5 モードでは0.5拍の食いが平滑化されること。"""
+    output = tmp_path / "half_subdivision.musicxml"
+    bpm = 120.0
+    spb = 60.0 / bpm
+    beat_times = tuple(i * spb for i in range(16))
+
+    result = AnalysisResult(
+        bpm=bpm,
+        duration_seconds=8.0,
+        beat_times=beat_times,
+        onset_times=(),
+        chords=(
+            ChordEvent(0.0, 1.70, "F#m"),
+            ChordEvent(1.70, 4.0, "D"),     # 0.5拍の食い
+        ),
+        chord_engine="test",
+    )
+
+    MusicXmlGenerator().generate(result, output, beat_subdivision=0.5)
+
+    parsed = converter.parse(output)
+    measure_1 = parsed.parts[0].getElementsByClass("Measure")[0]
+    symbols = [s.figure for s in measure_1.recurse().getElementsByClass("ChordSymbol")]
+    assert "D" not in symbols, f"0.5拍モードでDが平滑化されていない: {symbols}"
+
+
+

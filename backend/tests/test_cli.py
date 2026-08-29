@@ -54,10 +54,12 @@ def test_cli_success_removes_request_audio_and_writes_metadata(tmp_path, monkeyp
         def __init__(self, chord_engine: str = "viterbi", **kwargs) -> None:
             observed["chord_engine"] = chord_engine
 
-        def analyze_to_musicxml(self, audio_path, output_path, *, rhythm_level):
+        def analyze_to_musicxml(self, audio_path, output_path, *, rhythm_level, beat_subdivision=0.25):
             observed["audio_path"] = audio_path
+            observed["beat_subdivision"] = beat_subdivision
             assert audio_path.is_file()
             assert rhythm_level == 2
+            assert beat_subdivision in {0.25, 0.5}
             output_path.write_text("<score-partwise version='4.0' />", encoding="utf-8")
             return AnalysisResult(
                 bpm=120.0,
@@ -83,6 +85,7 @@ def test_cli_success_removes_request_audio_and_writes_metadata(tmp_path, monkeyp
 
     assert run(args) == 0
     assert output.is_file()
+    assert observed["beat_subdivision"] == 0.25
     assert json.loads(metadata.read_text(encoding="utf-8"))["chord_engine"] == "test"
     assert not observed["audio_path"].exists()
 

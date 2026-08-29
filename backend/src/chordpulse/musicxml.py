@@ -46,6 +46,7 @@ class MusicXmlGenerator:
         *,
         rhythm_level: RhythmLevel = None,
         anticipation_smoothing: bool = True,
+        beat_subdivision: float = 0.25,
         title: str = "ChordPulse Master Chord Chart",
     ) -> Path:
         try:
@@ -84,6 +85,7 @@ class MusicXmlGenerator:
                 harmony,
                 duration,
                 anticipation_smoothing=anticipation_smoothing,
+                beat_subdivision=beat_subdivision,
             )
             part.append(measure)
 
@@ -147,6 +149,23 @@ def _subdivision_time(
     return (t1 + t2) / 2.0
 
 
+def _fine_subdivision_time(
+    result: AnalysisResult,
+    measure: int,
+    subdivision: int,
+) -> float:
+    """0.25拍単位（1拍を4分割）でのサンプリング時刻を返す。
+
+    subdivision は 0 から beats_per_measure * 4 - 1 の範囲。
+    各拍を4等分し、平滑化とレンダリングの両方を0.25拍粒度で行うために使用する。
+    """
+    beat = subdivision // 4
+    quarter = subdivision % 4  # 0=表拍, 1=表と裏の中間, 2=裏拍, 3=裏と次拍の中間
+    t1 = _measure_time(result, measure, beat)
+    t2 = _measure_time(result, measure, beat + 1)
+    return t1 + (t2 - t1) * quarter / 4
+
+
 def _insert_chord_symbol(measure, label: str, offset: float, harmony, duration) -> None:
     if label == "N":
         return
@@ -172,59 +191,83 @@ def _render_adaptive_measure(
     duration,
     *,
     anticipation_smoothing: bool = True,
+    beat_subdivision: float = 0.25,
 ) -> None:
     """小節内のコードチェンジタイミングと長さに応じて、最適な音価（全音符、2分音符、4分音符、8分音符等）
     のスラッシュ音符およびコードシンボルをレンダリングします。
     """
     beats_per_measure = result.beats_per_measure
-    subdivision_count = beats_per_measure * 2  # 8分音符スロット (各 0.5 拍)
+    is_quarter = beat_subdivision < 0.5
+    divs_per_beat = 4 if is_quarter else 2
+    subdivision_count = beats_per_measure * divs_per_beat
+    slot_len = 0.25 if is_quarter else 0.5
+    sub_time_fn = _fine_subdivision_time if is_quarter else _subdivision_time
 
-    # 各スロット（0.5拍単位）のコードラベルを取得
+    # 各スロット（0.25拍または0.5拍単位）のコードラベルを取得
     slot_labels: list[str] = []
     for sub in range(subdivision_count):
-        t = _subdivision_time(result, measure_index, sub)
+        t = sub_time_fn(result, measure_index, sub)
         slot_labels.append(timeline.label_at(t))
 
     # アンティシペーションおよびディレイ（スピルオーバー）の平滑化
-    # 小節の境界付近での0.5拍のズレを吸収し、クオンタイズします。
     if anticipation_smoothing and len(slot_labels) >= 2:
         # 1. ディレイ（スピルオーバー）の平滑化
-        # 小節の最初の0.5拍だけ前の小節の最後のコードが残っており、その後別のコードに変わる場合、
-        # 最初の0.5拍を次のコードで上書きし、小節の頭から新しいコードにクオンタイズする。
+        # 小節の最初の1スロットだけ前の小節の最後のコードが残っており、その後別のコードに変わる場合、
+        # 最初のスロットを次のコードで上書きし、小節の頭から新しいコードにクオンタイズする。
         first_label = slot_labels[0]
         second_label = slot_labels[1]
         if first_label != second_label and measure_index > 0:
-            t_prev = _subdivision_time(result, measure_index - 1, subdivision_count - 1)
+            t_prev = sub_time_fn(result, measure_index - 1, subdivision_count - 1)
             prev_measure_label = timeline.label_at(t_prev)
             if first_label == prev_measure_label:
                 slot_labels[0] = second_label
 
-        # 2. アンティシペーションの平滑化
-        # 小節の最後の0.5拍だけコードが変わっており、かつそれが次の小節の頭のコードと同じ場合、
-        # その小節内ではコードチェンジせず、直前のコードを維持する。
+        # 2. 小節内の孤立コード（ノイズ）の平滑化
+        for i in range(1, len(slot_labels) - 1):
+            if slot_labels[i] != slot_labels[i-1] and slot_labels[i] != slot_labels[i+1]:
+                slot_labels[i] = slot_labels[i-1]
+
+        # 3. 小節末尾の孤立コードの平滑化（アンティシペーションと識別）
         last_label = slot_labels[-1]
-        prev_label = slot_labels[-2]
-        if last_label != prev_label:
-            t_next = _subdivision_time(result, measure_index + 1, 0)
+        anticipation_count = 0
+        for k in range(len(slot_labels) - 1, -1, -1):
+            if slot_labels[k] == last_label:
+                anticipation_count += 1
+            else:
+                break
+
+        if anticipation_count < len(slot_labels):
+            t_next = sub_time_fn(result, measure_index + 1, 0)
             next_measure_label = timeline.label_at(t_next)
-            if last_label == next_measure_label:
-                slot_labels[-1] = prev_label
+            fill_label = slot_labels[len(slot_labels) - anticipation_count - 1]
+
+            if next_measure_label != "N":
+                if last_label == next_measure_label:
+                    # 次の小節の頭と一致:
+                    # 0.25拍モード: 1スロット(0.25拍)のみならフライングノイズ平滑化、2スロット(0.5拍)以上はアウフタクト保持
+                    # 0.5拍モード: 1スロット(0.5拍)の食いを平滑化
+                    if anticipation_count <= 1:
+                        slot_labels[-1] = fill_label
+                else:
+                    # 次の小節と不一致なら全てノイズとして平滑化
+                    for k in range(len(slot_labels) - anticipation_count, len(slot_labels)):
+                        slot_labels[k] = fill_label
 
     # 連続する同じコードラベルのスロットをセグメントにまとめる
     segments: list[tuple[str, float, float]] = []  # (label, offset, length)
     current_label = slot_labels[0]
     current_start = 0.0
-    current_len = 0.5
+    current_len = slot_len
 
     for sub in range(1, subdivision_count):
         label = slot_labels[sub]
         if label == current_label:
-            current_len += 0.5
+            current_len += slot_len
         else:
             segments.append((current_label, current_start, current_len))
             current_label = label
-            current_start = sub * 0.5
-            current_len = 0.5
+            current_start = sub * slot_len
+            current_len = slot_len
     segments.append((current_label, current_start, current_len))
 
     # 各セグメントをレンダリング

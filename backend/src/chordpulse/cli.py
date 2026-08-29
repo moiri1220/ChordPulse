@@ -49,6 +49,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="コード認識エンジン (btc=AI深層学習最高精度, viterbi=HMM平滑化, harmonic=低音重視HPSS, template=標準クロマ)",
     )
     parser.add_argument(
+        "--beat-subdivision",
+        type=float,
+        choices=(0.25, 0.5),
+        default=0.25,
+        help="検知解像度・ビート分割単位 (0.25=16分音符・アウフタクト高精度・推奨, 0.5=8分音符・標準)",
+    )
+    parser.add_argument(
         "--analysis-json",
         type=Path,
         help="解析メタデータの出力先オプションパス（オーディオデータは含みません）",
@@ -88,6 +95,7 @@ def run(args: argparse.Namespace) -> int:
                 audio_path,
                 args.output,
                 rhythm_level=args.rhythm_level,
+                beat_subdivision=args.beat_subdivision,
             )
         if args.analysis_json:
             _write_analysis_json(args.analysis_json, result)

@@ -120,6 +120,7 @@ export default function HomePage() {
   const [chordEngine, setChordEngine] = useState("btc");
   const [lawfulUseConfirmation, setLawfulUseConfirmation] = useState(false);
   const [anticipationSmoothing, setAnticipationSmoothing] = useState(true);
+  const [beatSubdivision, setBeatSubdivision] = useState<number>(0.25);
   const [status, setStatus] = useState<AnalysisStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [output, setOutput] = useState<AnalysisOutput | null>(null);
@@ -131,6 +132,7 @@ export default function HomePage() {
   const fileInputId = useId();
   const chordEngineSelectId = useId();
   const rhythmModeSelectId = useId();
+  const beatSubdivisionSelectId = useId();
   const consentCheckboxId = useId();
 
   const apiBaseUrl = useMemo(
@@ -244,6 +246,7 @@ export default function HomePage() {
     formData.set("rhythm_level", "2");
     formData.set("chord_engine", chordEngine);
     formData.set("anticipation_smoothing", anticipationSmoothing.toString());
+    formData.set("beat_subdivision", beatSubdivision.toString());
     formData.set("lawful_use_confirmation", "true");
     if (sourceMode === "file" && file) {
       formData.set("file", file);
@@ -455,8 +458,23 @@ export default function HomePage() {
                 onChange={(event) => setAnticipationSmoothing(event.target.value === "true")}
                 value={anticipationSmoothing.toString()}
               >
-                <option value="true">平滑化あり（アンティシペーションを修正・推奨）</option>
-                <option value="false">平滑化なし（細かいリズムもそのまま出力）</option>
+                <option value="true">平滑化あり（ノイズを除去・食いは保持・推奨）</option>
+                <option value="false">平滑化なし（細かい判定もすべて出力）</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="field-label" htmlFor={beatSubdivisionSelectId}>
+                検知解像度（ビート分割単位）
+              </label>
+              <select
+                className="select-input"
+                id={beatSubdivisionSelectId}
+                onChange={(event) => setBeatSubdivision(parseFloat(event.target.value))}
+                value={beatSubdivision.toString()}
+              >
+                <option value="0.25">0.25拍単位（16分音符・アウフタクト高精度・推奨）</option>
+                <option value="0.5">0.5拍単位（8分音符・標準）</option>
               </select>
             </div>
 
